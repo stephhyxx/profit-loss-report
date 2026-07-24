@@ -5,8 +5,8 @@ export function middleware(request) {
 
   if (basicAuth) {
     const authValue = basicAuth.split(' ')[1];
-    const [user, pwd] = atob(authValue).split(':');
-    if (user === process.env.SHOP_USER && pwd === process.env.SHOP_PASSWORD) {
+    const [, pwd] = atob(authValue).split(':');
+    if (pwd === process.env.SHOP_PASSWORD) {
       return NextResponse.next();
     }
   }
