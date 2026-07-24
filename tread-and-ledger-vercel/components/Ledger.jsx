@@ -64,8 +64,8 @@ const daysInMonth = (k) => {
   return new Date(y, m, 0).getDate();
 };
 const fmtDisplay = (k) =>
-  parseKey(k).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
-const fmtShort = (k) => parseKey(k).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+  parseKey(k).toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+const fmtShort = (k) => parseKey(k).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' });
 const todayKey = () => toKey(new Date());
 const daysBetween = (startK, endK) => {
   const out = [];
@@ -77,7 +77,7 @@ const daysBetween = (startK, endK) => {
   }
   return out;
 };
-const money = (n) => (Math.round((n + Number.EPSILON) * 100) / 100).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const money = (n) => (Math.round((n + Number.EPSILON) * 100) / 100).toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 // ---------- small UI atoms ----------
 function Card({ children, style, ...rest }) {
@@ -104,7 +104,7 @@ function StatBlock({ label, value, tone = 'ink' }) {
       <div style={{ fontFamily: FONT_BODY, fontSize: 11, letterSpacing: 0.6, textTransform: 'uppercase', color: C.inkSoft }}>
         {label}
       </div>
-      <div style={{ fontFamily: FONT_MONO, fontSize: 22, fontWeight: 600, color }}>£{money(value)}</div>
+      <div style={{ fontFamily: FONT_MONO, fontSize: 22, fontWeight: 600, color }}>${money(value)}</div>
     </div>
   );
 }
@@ -298,7 +298,7 @@ function DayTab(props) {
           <Card style={{ padding: 14, background: dayNetProfit >= 0 ? C.greenSoft : C.redSoft, border: `1px solid ${dayNetProfit >= 0 ? C.green : C.red}` }}>
             <div style={{ fontFamily: FONT_BODY, fontSize: 11, letterSpacing: 0.6, textTransform: 'uppercase', color: C.inkSoft }}>Net profit for the day</div>
             <div style={{ fontFamily: FONT_MONO, fontSize: 30, fontWeight: 600, color: dayNetProfit >= 0 ? C.green : C.red }}>
-              {dayNetProfit < 0 ? '-' : ''}£{money(Math.abs(dayNetProfit))}
+              {dayNetProfit < 0 ? '-' : ''}${money(Math.abs(dayNetProfit))}
             </div>
             <div style={{ display: 'flex', gap: 16, marginTop: 8, flexWrap: 'wrap' }}>
               <MiniStat label="Revenue" value={dayRevenue} />
@@ -349,7 +349,7 @@ function MiniStat({ label, value }) {
   return (
     <div>
       <div style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.5, color: C.inkSoft }}>{label}</div>
-      <div style={{ fontFamily: FONT_MONO, fontSize: 14, fontWeight: 600 }}>£{money(value)}</div>
+      <div style={{ fontFamily: FONT_MONO, fontSize: 14, fontWeight: 600 }}>${money(value)}</div>
     </div>
   );
 }
@@ -381,14 +381,14 @@ function JobForm({ onSubmit, onCancel }) {
         <input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="e.g. 2x 205/55R16 + fitting" style={inputStyle} />
       </FieldRow>
       <div style={{ display: 'flex', gap: 10 }}>
-        <FieldRow label="Sale price (£)" style={{ flex: 1 }}>
+        <FieldRow label="Sale price ($)" style={{ flex: 1 }}>
           <input type="number" inputMode="decimal" value={salePrice} onChange={(e) => setSalePrice(e.target.value)} placeholder="0.00" style={inputStyle} />
         </FieldRow>
-        <FieldRow label="Tyre cost (£)" style={{ flex: 1 }}>
+        <FieldRow label="Tyre cost ($)" style={{ flex: 1 }}>
           <input type="number" inputMode="decimal" value={cost} onChange={(e) => setCost(e.target.value)} placeholder="0.00" style={inputStyle} />
         </FieldRow>
       </div>
-      <div style={{ fontFamily: FONT_MONO, fontSize: 13, color: profit >= 0 ? C.green : C.red, marginBottom: 10 }}>Profit: £{money(profit)}</div>
+      <div style={{ fontFamily: FONT_MONO, fontSize: 13, color: profit >= 0 ? C.green : C.red, marginBottom: 10 }}>Profit: ${money(profit)}</div>
       <FormButtons onCancel={onCancel} onSubmit={() => { if (!description.trim() || salePrice === '') return; onSubmit({ description: description.trim(), salePrice: Number(salePrice), cost: Number(cost) || 0 }); }} />
     </div>
   );
@@ -401,7 +401,7 @@ function JobRow({ job, onDelete }) {
       <div style={{ minWidth: 0 }}>
         <div style={{ fontSize: 13, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{job.description}</div>
         <div style={{ fontFamily: FONT_MONO, fontSize: 12, color: C.inkSoft }}>
-          £{money(job.salePrice)} sale · £{money(job.cost || 0)} cost · <span style={{ color: profit >= 0 ? C.green : C.red }}>£{money(profit)} profit</span>
+          ${money(job.salePrice)} sale · ${money(job.cost || 0)} cost · <span style={{ color: profit >= 0 ? C.green : C.red }}>${money(profit)} profit</span>
         </div>
       </div>
       <button onClick={onDelete} style={{ background: 'none', border: 'none', color: C.red, cursor: 'pointer', padding: 6, flexShrink: 0 }}><Trash2 size={15} /></button>
@@ -423,7 +423,7 @@ function ExpenseForm({ defaultDate, onSubmit, onCancel }) {
             {Object.entries(CATS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
           </select>
         </FieldRow>
-        <FieldRow label="Amount (£)" style={{ flex: 1 }}>
+        <FieldRow label="Amount ($)" style={{ flex: 1 }}>
           <input type="number" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" style={inputStyle} />
         </FieldRow>
       </div>
@@ -435,7 +435,7 @@ function ExpenseForm({ defaultDate, onSubmit, onCancel }) {
       </FieldRow>
       {amount !== '' && (
         <div style={{ fontFamily: FONT_MONO, fontSize: 12, color: C.inkSoft, marginBottom: 10 }}>
-          = £{money((Number(amount) || 0) / 7)} / day across the week of {fmtShort(mondayOf(paidDate))}
+          = ${money((Number(amount) || 0) / 7)} / day across the week of {fmtShort(mondayOf(paidDate))}
         </div>
       )}
       <FormButtons onCancel={onCancel} onSubmit={() => { if (amount === '') return; onSubmit({ category, amount: Number(amount), note: note.trim(), paidDate }); }} />
@@ -452,7 +452,7 @@ function ExpenseRow({ entry, onDelete }) {
           {entry.note ? ` — ${entry.note}` : ''}
         </div>
         <div style={{ fontFamily: FONT_MONO, fontSize: 12, color: C.inkSoft }}>
-          £{money(entry.amount)} paid {fmtShort(entry.paidDate)} · £{money(entry.amount / 7)}/day
+          ${money(entry.amount)} paid {fmtShort(entry.paidDate)} · ${money(entry.amount / 7)}/day
         </div>
       </div>
       <button onClick={onDelete} style={{ background: 'none', border: 'none', color: C.red, cursor: 'pointer', padding: 6, flexShrink: 0 }}><Trash2 size={15} /></button>
@@ -591,7 +591,7 @@ function PnlTab({ dateKey }) {
           <Card style={{ padding: 14, background: data.totals.netProfit >= 0 ? C.greenSoft : C.redSoft, border: `1px solid ${data.totals.netProfit >= 0 ? C.green : C.red}` }}>
             <div style={{ fontFamily: FONT_BODY, fontSize: 11, letterSpacing: 0.6, textTransform: 'uppercase', color: C.inkSoft }}>Net profit</div>
             <div style={{ fontFamily: FONT_MONO, fontSize: 30, fontWeight: 600, color: data.totals.netProfit >= 0 ? C.green : C.red }}>
-              {data.totals.netProfit < 0 ? '-' : ''}£{money(Math.abs(data.totals.netProfit))}
+              {data.totals.netProfit < 0 ? '-' : ''}${money(Math.abs(data.totals.netProfit))}
             </div>
             <div style={{ fontFamily: FONT_BODY, fontSize: 12, color: C.inkSoft }}>
               Margin: {data.totals.revenue > 0 ? ((data.totals.netProfit / data.totals.revenue) * 100).toFixed(1) : '0.0'}%
@@ -618,7 +618,7 @@ function PnlTab({ dateKey }) {
                   <CartesianGrid strokeDasharray="3 3" stroke={C.line} />
                   <XAxis dataKey="name" tick={{ fontSize: 10, fontFamily: FONT_BODY, fill: C.inkSoft }} />
                   <YAxis tick={{ fontSize: 10, fontFamily: FONT_BODY, fill: C.inkSoft }} />
-                  <Tooltip contentStyle={{ fontFamily: FONT_BODY, fontSize: 12, borderRadius: 6, border: `1px solid ${C.line}` }} formatter={(v) => `£${money(v)}`} />
+                  <Tooltip contentStyle={{ fontFamily: FONT_BODY, fontSize: 12, borderRadius: 6, border: `1px solid ${C.line}` }} formatter={(v) => `$${money(v)}`} />
                   <Bar dataKey="Revenue" fill={C.green} radius={[3, 3, 0, 0]} />
                   <Bar dataKey="Costs" fill={C.red} radius={[3, 3, 0, 0]} />
                 </BarChart>
@@ -632,7 +632,7 @@ function PnlTab({ dateKey }) {
               {data.days.map((d) => (
                 <div key={d.date} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12.5, padding: '5px 0', borderBottom: `1px dashed ${C.line}` }}>
                   <span style={{ color: C.inkSoft }}>{fmtShort(d.date)} {d.jobCount ? `· ${d.jobCount} job${d.jobCount > 1 ? 's' : ''}` : ''}</span>
-                  <span style={{ fontFamily: FONT_MONO, color: d.netProfit >= 0 ? C.green : C.red }}>{d.netProfit < 0 ? '-' : ''}£{money(Math.abs(d.netProfit))}</span>
+                  <span style={{ fontFamily: FONT_MONO, color: d.netProfit >= 0 ? C.green : C.red }}>{d.netProfit < 0 ? '-' : ''}${money(Math.abs(d.netProfit))}</span>
                 </div>
               ))}
             </div>
@@ -657,10 +657,10 @@ function SettingsTab({ settings, saveSettings }) {
         <div style={{ fontSize: 12, color: C.inkSoft, marginBottom: 10 }}>
           Set your monthly rent once — it's automatically split across every day of the month for you, no need to log it.
         </div>
-        <FieldRow label="Monthly rent (£)">
+        <FieldRow label="Monthly rent ($)">
           <input type="number" inputMode="decimal" value={rent} onChange={(e) => { setRent(e.target.value); setSaved(false); }} style={inputStyle} />
         </FieldRow>
-        <div style={{ fontFamily: FONT_MONO, fontSize: 12, color: C.inkSoft, marginBottom: 10 }}>≈ £{money((Number(rent) || 0) / 30.44)} / day on average</div>
+        <div style={{ fontFamily: FONT_MONO, fontSize: 12, color: C.inkSoft, marginBottom: 10 }}>≈ ${money((Number(rent) || 0) / 30.44)} / day on average</div>
         <button onClick={() => { saveSettings({ ...settings, monthlyRent: Number(rent) || 0 }); setSaved(true); }} style={{ background: C.ink, color: C.paper, border: 'none', borderRadius: 6, padding: '9px 16px', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>Save</button>
         {saved && <span style={{ marginLeft: 10, fontSize: 12, color: C.green }}>Saved</span>}
       </Card>
