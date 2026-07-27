@@ -11,7 +11,8 @@ import {
 import {
   fetchJobs, createJob, deleteJobApi,
   fetchExpenses, createExpense, deleteExpenseApi,
-  fetchSettings, saveSettingsApi,
+  fetchDailyCosts, createDailyCost, deleteDailyCostApi,
+  fetchRentMonths, saveRentMonthApi, deleteRentMonthApi,
 } from '../lib/api';
 
 // ---------- palette / tokens ----------
@@ -38,6 +39,16 @@ const CATS = {
   wages: { label: 'Wages', color: '#7A5C3E' },
   consumables: { label: 'Consumables', color: '#3E6E52' },
   other: { label: 'Other', color: '#5B5344' },
+  tyreDisposal: { label: 'Tyre Disposal', color: '#8A4B3E' },
+};
+
+// Daily costs: paid out per-person, logged against the specific day worked
+// (not spread across the week like wages/consumables/other above).
+const DAILY_WAGES = {
+  steph: { label: 'Steph Wages', color: '#B5762E' },
+  jared: { label: 'Jared Wages', color: '#5C7A8A' },
+  jack: { label: 'Jack Wages', color: '#6E5C8A' },
+  corey: { label: 'Corey Wages', color: '#3E6E6E' },
 };
 
 // ---------- date helpers ----------
@@ -63,6 +74,19 @@ const daysInMonth = (k) => {
   const [y, m] = k.split('-').map(Number);
   return new Date(y, m, 0).getDate();
 };
+const isSunday = (k) => parseKey(k).getDay() === 0;
+// Number of Monday-Saturday days in the month that date key `k` falls in.
+// Bills/rent are spread across these days only, never onto a Sunday.
+const weekdaysInMonth = (k) => {
+  const total = daysInMonth(k);
+  const [y, m] = k.split('-').map(Number);
+  let sundays = 0;
+  for (let d = 1; d <= total; d++) {
+    if (new Date(y, m - 1, d).getDay() === 0) sundays++;
+  }
+  return total - sundays;
+};
+const monthKeyOf = (k) => k.slice(0, 7);
 const fmtDisplay = (k) =>
   parseKey(k).toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
 const fmtShort = (k) => parseKey(k).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' });
@@ -124,26 +148,30 @@ export default function Ledger() {
   const [dateKey, setDateKey] = useState(todayKey());
   const [jobs, setJobs] = useState([]);
   const [weekExpenses, setWeekExpenses] = useState([]);
-  const [settings, setSettings] = useState({ monthlyRent: 0 });
+  const [dailyCosts, setDailyCosts] = useState([]);
+  const [rentMonths, setRentMonths] = useState({}); // { 'YYYY-MM': amount }
   const [dayLoading, setDayLoading] = useState(true);
   const [dayError, setDayError] = useState('');
   const [tab, setTab] = useState('day');
   const [showJobForm, setShowJobForm] = useState(false);
   const [showExpForm, setShowExpForm] = useState(false);
+  const [showDailyCostForm, setShowDailyCostForm] = useState(false);
 
   const loadDay = useCallback(async (dk) => {
     setDayLoading(true);
     setDayError('');
     const monday = mondayOf(dk);
     try {
-      const [dayJobs, weekExp, s] = await Promise.all([
+      const [dayJobs, weekExp, dayCosts, rentRows] = await Promise.all([
         fetchJobs(dk, dk),
         fetchExpenses(monday, monday),
-        fetchSettings(),
+        fetchDailyCosts(dk, dk),
+        fetchRentMonths(),
       ]);
       setJobs(dayJobs);
       setWeekExpenses(weekExp);
-      setSettings(s);
+      setDailyCosts(dayCosts);
+      setRentMonths(Object.fromEntries(rentRows.map((r) => [r.month, Number(r.amount)])));
     } catch (err) {
       setDayError(`Couldn't load data: ${err.message}. If this is a fresh deployment, visit /api/init once to set up the database.`);
     }
@@ -172,20 +200,41 @@ export default function Ledger() {
     await loadDay(dateKey);
   };
 
-  const saveSettings = async (s) => {
-    setSettings(s);
-    await saveSettingsApi(s);
+  const addDailyCost = async (entry) => {
+    const saved = await createDailyCost({ ...entry, date: dateKey });
+    setDailyCosts((prev) => [...prev, saved]);
+  };
+  const deleteDailyCost = async (id) => {
+    setDailyCosts((prev) => prev.filter((c) => c.id !== id));
+    await deleteDailyCostApi(id);
+  };
+
+  const saveRentMonth = async (month, amount) => {
+    await saveRentMonthApi({ month, amount });
+    setRentMonths((prev) => ({ ...prev, [month]: amount }));
+  };
+  const deleteRentMonth = async (month) => {
+    await deleteRentMonthApi(month);
+    setRentMonths((prev) => {
+      const next = { ...prev };
+      delete next[month];
+      return next;
+    });
   };
 
   // ----- derived day totals -----
+  const dayIsSunday = isSunday(dateKey);
   const dayRevenue = jobs.reduce((s, j) => s + Number(j.salePrice || 0), 0);
   const dayCost = jobs.reduce((s, j) => s + Number(j.cost || 0), 0);
-  const dayRent = (settings.monthlyRent || 0) / daysInMonth(dateKey);
+  const monthRent = rentMonths[monthKeyOf(dateKey)] || 0;
+  const dayRent = dayIsSunday ? 0 : monthRent / weekdaysInMonth(dateKey);
   const wagesTotal = weekExpenses.filter((e) => e.category === 'wages').reduce((s, e) => s + Number(e.amount || 0), 0);
   const consumablesTotal = weekExpenses.filter((e) => e.category === 'consumables').reduce((s, e) => s + Number(e.amount || 0), 0);
   const otherTotal = weekExpenses.filter((e) => e.category === 'other').reduce((s, e) => s + Number(e.amount || 0), 0);
-  const dayWeeklyShare = (wagesTotal + consumablesTotal + otherTotal) / 7;
-  const dayNetProfit = dayRevenue - dayCost - dayRent - dayWeeklyShare;
+  const tyreDisposalTotal = weekExpenses.filter((e) => e.category === 'tyreDisposal').reduce((s, e) => s + Number(e.amount || 0), 0);
+  const dayWeeklyShare = dayIsSunday ? 0 : (wagesTotal + consumablesTotal + otherTotal + tyreDisposalTotal) / 6;
+  const dayDailyWagesTotal = dailyCosts.reduce((s, c) => s + Number(c.amount || 0), 0);
+  const dayNetProfit = dayRevenue - dayCost - dayRent - dayWeeklyShare - dayDailyWagesTotal;
 
   return (
     <div style={{ fontFamily: FONT_BODY, background: C.paper, minHeight: '100vh', color: C.ink, paddingBottom: 84 }}>
@@ -212,22 +261,32 @@ export default function Ledger() {
             weekExpenses={weekExpenses}
             addExpense={addExpense}
             deleteExpense={deleteExpense}
+            dailyCosts={dailyCosts}
+            addDailyCost={addDailyCost}
+            deleteDailyCost={deleteDailyCost}
             showJobForm={showJobForm}
             setShowJobForm={setShowJobForm}
             showExpForm={showExpForm}
             setShowExpForm={setShowExpForm}
+            showDailyCostForm={showDailyCostForm}
+            setShowDailyCostForm={setShowDailyCostForm}
             dayRevenue={dayRevenue}
             dayCost={dayCost}
             dayRent={dayRent}
             dayWeeklyShare={dayWeeklyShare}
+            dayDailyWagesTotal={dayDailyWagesTotal}
             dayNetProfit={dayNetProfit}
             wagesTotal={wagesTotal}
             consumablesTotal={consumablesTotal}
             otherTotal={otherTotal}
+            tyreDisposalTotal={tyreDisposalTotal}
+            dayIsSunday={dayIsSunday}
           />
         )}
         {tab === 'pnl' && <PnlTab dateKey={dateKey} />}
-        {tab === 'settings' && <SettingsTab settings={settings} saveSettings={saveSettings} />}
+        {tab === 'settings' && (
+          <SettingsTab rentMonths={rentMonths} saveRentMonth={saveRentMonth} deleteRentMonth={deleteRentMonth} />
+        )}
       </main>
 
       <nav style={{ position: 'fixed', bottom: 0, left: 0, right: 0, background: C.card, borderTop: `1px solid ${C.line}`, display: 'flex', zIndex: 30 }}>
@@ -259,9 +318,11 @@ function DayTab(props) {
   const {
     dateKey, setDateKey, jobs, loading, error, addJob, deleteJob,
     weekExpenses, addExpense, deleteExpense,
+    dailyCosts, addDailyCost, deleteDailyCost,
     showJobForm, setShowJobForm, showExpForm, setShowExpForm,
-    dayRevenue, dayCost, dayRent, dayWeeklyShare, dayNetProfit,
-    wagesTotal, consumablesTotal, otherTotal,
+    showDailyCostForm, setShowDailyCostForm,
+    dayRevenue, dayCost, dayRent, dayWeeklyShare, dayDailyWagesTotal, dayNetProfit,
+    wagesTotal, consumablesTotal, otherTotal, tyreDisposalTotal, dayIsSunday,
   } = props;
 
   const isToday = dateKey === todayKey();
@@ -305,7 +366,13 @@ function DayTab(props) {
               <MiniStat label="Tyre cost" value={dayCost} />
               <MiniStat label="Rent (today)" value={dayRent} />
               <MiniStat label="Bills (today's share)" value={dayWeeklyShare} />
+              <MiniStat label="Daily wages (today)" value={dayDailyWagesTotal} />
             </div>
+            {dayIsSunday && (
+              <div style={{ fontSize: 11, color: C.inkSoft, marginTop: 8, fontStyle: 'italic' }}>
+                Sunday doesn't carry a share of rent or weekly bills — only jobs and any daily wages you log will show here.
+              </div>
+            )}
           </Card>
 
           <Card style={{ padding: 14 }}>
@@ -320,7 +387,7 @@ function DayTab(props) {
           <Card style={{ padding: 14 }}>
             <SectionHeader title="This week's bills" onAdd={() => setShowExpForm((v) => !v)} addLabel="Log a bill" />
             <div style={{ fontFamily: FONT_BODY, fontSize: 12, color: C.inkSoft, marginTop: -4, marginBottom: showExpForm ? 10 : 0 }}>
-              Wages, parts, disposal fees etc. Log the full amount when it's paid — it's spread evenly across the 7 days of that week automatically.
+              Wages, parts, disposal fees etc. that recur weekly (like tyre disposal or Bursons orders). Log the full amount when it's paid — it's spread evenly across Monday–Saturday of that week automatically, skipping Sunday.
             </div>
             {showExpForm && (
               <ExpenseForm defaultDate={dateKey} onSubmit={(e) => { addExpense(e); setShowExpForm(false); }} onCancel={() => setShowExpForm(false)} />
@@ -334,8 +401,23 @@ function DayTab(props) {
                 <MiniStat label="Wages / wk" value={wagesTotal} />
                 <MiniStat label="Consumables / wk" value={consumablesTotal} />
                 <MiniStat label="Other / wk" value={otherTotal} />
+                <MiniStat label="Tyre disposal / wk" value={tyreDisposalTotal} />
               </div>
             )}
+          </Card>
+
+          <Card style={{ padding: 14 }}>
+            <SectionHeader title="Daily costs" onAdd={() => setShowDailyCostForm((v) => !v)} addLabel="Log a wage" />
+            <div style={{ fontFamily: FONT_BODY, fontSize: 12, color: C.inkSoft, marginTop: -4, marginBottom: showDailyCostForm ? 10 : 0 }}>
+              Steph, Jared, Jack and Corey's wages — logged against the actual day worked, not spread across the week.
+            </div>
+            {showDailyCostForm && (
+              <DailyCostForm onSubmit={(c) => { addDailyCost(c); setShowDailyCostForm(false); }} onCancel={() => setShowDailyCostForm(false)} />
+            )}
+            {dailyCosts.length === 0 && !showDailyCostForm && <EmptyState text="No daily wages logged for this day yet." />}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: dailyCosts.length ? 10 : 0 }}>
+              {dailyCosts.map((c) => <DailyCostRow key={c.id} entry={c} onDelete={() => deleteDailyCost(c.id)} />)}
+            </div>
           </Card>
         </>
       )}
@@ -460,6 +542,47 @@ function ExpenseRow({ entry, onDelete }) {
   );
 }
 
+function DailyCostForm({ onSubmit, onCancel }) {
+  const [person, setPerson] = useState('steph');
+  const [amount, setAmount] = useState('');
+  const [note, setNote] = useState('');
+
+  return (
+    <div style={{ background: C.paperDark, borderRadius: 8, padding: 12, marginBottom: 4 }}>
+      <div style={{ display: 'flex', gap: 10 }}>
+        <FieldRow label="Person" style={{ flex: 1 }}>
+          <select value={person} onChange={(e) => setPerson(e.target.value)} style={inputStyle}>
+            {Object.entries(DAILY_WAGES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+          </select>
+        </FieldRow>
+        <FieldRow label="Amount ($)" style={{ flex: 1 }}>
+          <input type="number" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" style={inputStyle} />
+        </FieldRow>
+      </div>
+      <FieldRow label="Note (optional)">
+        <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. half day" style={inputStyle} />
+      </FieldRow>
+      <FormButtons onCancel={onCancel} onSubmit={() => { if (amount === '') return; onSubmit({ person, amount: Number(amount), note: note.trim() }); }} />
+    </div>
+  );
+}
+
+function DailyCostRow({ entry, onDelete }) {
+  const cfg = DAILY_WAGES[entry.person] || { label: entry.person, color: C.ink };
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', border: `1px dashed ${C.line}`, borderRadius: 8, padding: '8px 10px', background: C.paper }}>
+      <div style={{ minWidth: 0 }}>
+        <div style={{ fontSize: 13, fontWeight: 500 }}>
+          <span style={{ color: cfg.color }}>{cfg.label}</span>
+          {entry.note ? ` — ${entry.note}` : ''}
+        </div>
+        <div style={{ fontFamily: FONT_MONO, fontSize: 12, color: C.inkSoft }}>${money(entry.amount)}</div>
+      </div>
+      <button onClick={onDelete} style={{ background: 'none', border: 'none', color: C.red, cursor: 'pointer', padding: 6, flexShrink: 0 }}><Trash2 size={15} /></button>
+    </div>
+  );
+}
+
 function FieldRow({ label, children, style }) {
   return (
     <div style={{ marginBottom: 8, ...style }}>
@@ -509,39 +632,51 @@ function PnlTab({ dateKey }) {
       try {
         const weekFrom = mondayOf(start);
         const weekTo = mondayOf(end);
-        const [jobRows, expenseRows, settings] = await Promise.all([
+        const [jobRows, expenseRows, dailyCostRows, rentRows] = await Promise.all([
           fetchJobs(start, end),
           fetchExpenses(weekFrom, weekTo),
-          fetchSettings(),
+          fetchDailyCosts(start, end),
+          fetchRentMonths(),
         ]);
         if (cancelled) return;
+
+        const rentByMonth = Object.fromEntries(rentRows.map((r) => [r.month, Number(r.amount)]));
 
         const jobsByDate = {};
         jobRows.forEach((j) => {
           (jobsByDate[j.date] ||= []).push(j);
         });
+        const dailyCostsByDate = {};
+        dailyCostRows.forEach((c) => {
+          (dailyCostsByDate[c.date] ||= []).push(c);
+        });
 
         const days = daysBetween(start, end).map((d) => {
+          const sunday = isSunday(d);
           const dayJobs = jobsByDate[d] || [];
           const revenue = dayJobs.reduce((s, j) => s + Number(j.salePrice || 0), 0);
           const tyreCost = dayJobs.reduce((s, j) => s + Number(j.cost || 0), 0);
           const monday = mondayOf(d);
           const weekly = expenseRows.filter((e) => e.weekMonday === monday);
-          const wages = weekly.filter((e) => e.category === 'wages').reduce((s, e) => s + Number(e.amount || 0), 0) / 7;
-          const consumables = weekly.filter((e) => e.category === 'consumables').reduce((s, e) => s + Number(e.amount || 0), 0) / 7;
-          const other = weekly.filter((e) => e.category === 'other').reduce((s, e) => s + Number(e.amount || 0), 0) / 7;
-          const rent = (settings.monthlyRent || 0) / daysInMonth(d);
-          const totalCost = tyreCost + wages + consumables + other + rent;
+          const weeklyDivisor = sunday ? Infinity : 6;
+          const wages = weekly.filter((e) => e.category === 'wages').reduce((s, e) => s + Number(e.amount || 0), 0) / weeklyDivisor;
+          const consumables = weekly.filter((e) => e.category === 'consumables').reduce((s, e) => s + Number(e.amount || 0), 0) / weeklyDivisor;
+          const other = weekly.filter((e) => e.category === 'other').reduce((s, e) => s + Number(e.amount || 0), 0) / weeklyDivisor;
+          const tyreDisposal = weekly.filter((e) => e.category === 'tyreDisposal').reduce((s, e) => s + Number(e.amount || 0), 0) / weeklyDivisor;
+          const rent = sunday ? 0 : (rentByMonth[monthKeyOf(d)] || 0) / weekdaysInMonth(d);
+          const dailyWages = (dailyCostsByDate[d] || []).reduce((s, c) => s + Number(c.amount || 0), 0);
+          const totalCost = tyreCost + wages + consumables + other + tyreDisposal + rent + dailyWages;
           const netProfit = revenue - totalCost;
-          return { date: d, revenue, tyreCost, wages, consumables, other, rent, totalCost, netProfit, jobCount: dayJobs.length };
+          return { date: d, revenue, tyreCost, wages, consumables, other, tyreDisposal, rent, dailyWages, totalCost, netProfit, jobCount: dayJobs.length };
         });
 
         const totals = days.reduce((acc, d) => {
           acc.revenue += d.revenue; acc.tyreCost += d.tyreCost; acc.wages += d.wages;
-          acc.consumables += d.consumables; acc.other += d.other; acc.rent += d.rent;
+          acc.consumables += d.consumables; acc.other += d.other; acc.tyreDisposal += d.tyreDisposal;
+          acc.rent += d.rent; acc.dailyWages += d.dailyWages;
           acc.totalCost += d.totalCost; acc.netProfit += d.netProfit;
           return acc;
-        }, { revenue: 0, tyreCost: 0, wages: 0, consumables: 0, other: 0, rent: 0, totalCost: 0, netProfit: 0 });
+        }, { revenue: 0, tyreCost: 0, wages: 0, consumables: 0, other: 0, tyreDisposal: 0, rent: 0, dailyWages: 0, totalCost: 0, netProfit: 0 });
 
         setData({ days, totals });
       } catch (err) {
@@ -604,8 +739,10 @@ function PnlTab({ dateKey }) {
               <StatBlock label="Revenue" value={data.totals.revenue} />
               <StatBlock label="Tyre cost" value={data.totals.tyreCost} tone="red" />
               <StatBlock label="Rent" value={data.totals.rent} tone="red" />
-              <StatBlock label="Wages" value={data.totals.wages} tone="red" />
+              <StatBlock label="Weekly wages" value={data.totals.wages} tone="red" />
+              <StatBlock label="Daily wages" value={data.totals.dailyWages} tone="red" />
               <StatBlock label="Consumables" value={data.totals.consumables} tone="red" />
+              <StatBlock label="Tyre disposal" value={data.totals.tyreDisposal} tone="red" />
               <StatBlock label="Other bills" value={data.totals.other} tone="red" />
             </div>
           </Card>
@@ -644,33 +781,67 @@ function PnlTab({ dateKey }) {
 }
 
 // ---------- Settings tab ----------
-function SettingsTab({ settings, saveSettings }) {
-  const [rent, setRent] = useState(settings.monthlyRent || 0);
+function monthLabel(mk) {
+  const [y, m] = mk.split('-').map(Number);
+  return new Date(y, m - 1, 1).toLocaleDateString('en-AU', { month: 'long', year: 'numeric' });
+}
+
+function SettingsTab({ rentMonths, saveRentMonth, deleteRentMonth }) {
+  const thisMonth = todayKey().slice(0, 7);
+  const [month, setMonth] = useState(thisMonth);
+  const [amount, setAmount] = useState('');
   const [saved, setSaved] = useState(false);
 
-  useEffect(() => { setRent(settings.monthlyRent || 0); }, [settings.monthlyRent]);
+  const sortedMonths = Object.keys(rentMonths).sort().reverse();
+
+  const handleSave = () => {
+    if (amount === '') return;
+    saveRentMonth(month, Number(amount));
+    setSaved(true);
+    setTimeout(() => setSaved(false), 1500);
+  };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
       <Card style={{ padding: 14 }}>
         <div style={{ fontFamily: FONT_DISPLAY, fontSize: 15, fontWeight: 600, textTransform: 'uppercase', marginBottom: 4 }}>Rent</div>
         <div style={{ fontSize: 12, color: C.inkSoft, marginBottom: 10 }}>
-          Set your monthly rent once — it's automatically split across every day of the month for you, no need to log it.
+          Rent changes a bit each month, so add it here as each bill comes in. It's automatically split across Monday–Saturday of that month — Sunday doesn't carry a share.
         </div>
-        <FieldRow label="Monthly rent ($)">
-          <input type="number" inputMode="decimal" value={rent} onChange={(e) => { setRent(e.target.value); setSaved(false); }} style={inputStyle} />
-        </FieldRow>
-        <div style={{ fontFamily: FONT_MONO, fontSize: 12, color: C.inkSoft, marginBottom: 10 }}>≈ ${money((Number(rent) || 0) / 30.44)} / day on average</div>
-        <button onClick={() => { saveSettings({ ...settings, monthlyRent: Number(rent) || 0 }); setSaved(true); }} style={{ background: C.ink, color: C.paper, border: 'none', borderRadius: 6, padding: '9px 16px', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>Save</button>
+        <div style={{ display: 'flex', gap: 10 }}>
+          <FieldRow label="Month" style={{ flex: 1 }}>
+            <input type="month" value={month} onChange={(e) => { setMonth(e.target.value); setSaved(false); }} style={inputStyle} />
+          </FieldRow>
+          <FieldRow label="Rent for that month ($)" style={{ flex: 1 }}>
+            <input type="number" inputMode="decimal" value={amount} onChange={(e) => { setAmount(e.target.value); setSaved(false); }} placeholder="0.00" style={inputStyle} />
+          </FieldRow>
+        </div>
+        <button onClick={handleSave} style={{ background: C.ink, color: C.paper, border: 'none', borderRadius: 6, padding: '9px 16px', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>Save</button>
         {saved && <span style={{ marginLeft: 10, fontSize: 12, color: C.green }}>Saved</span>}
+
+        {sortedMonths.length > 0 && (
+          <div style={{ marginTop: 14, paddingTop: 12, borderTop: `1px dashed ${C.line}`, display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {sortedMonths.map((mk) => (
+              <div key={mk} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 13 }}>
+                <span>{monthLabel(mk)}</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <span style={{ fontFamily: FONT_MONO }}>${money(rentMonths[mk])}</span>
+                  <button onClick={() => deleteRentMonth(mk)} style={{ background: 'none', border: 'none', color: C.red, cursor: 'pointer', padding: 4, display: 'flex' }}><Trash2 size={14} /></button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </Card>
 
       <Card style={{ padding: 14 }}>
         <div style={{ fontFamily: FONT_DISPLAY, fontSize: 15, fontWeight: 600, textTransform: 'uppercase', marginBottom: 4 }}>About this ledger</div>
         <ul style={{ fontSize: 12.5, color: C.inkSoft, paddingLeft: 18, margin: 0, display: 'flex', flexDirection: 'column', gap: 6 }}>
           <li>Jobs (sale price and tyre cost) are logged against the day they happen.</li>
-          <li>Wages, consumables, disposal fees etc. are logged on the day they're paid and spread evenly across that Monday–Sunday week.</li>
-          <li>Rent is set once here and split evenly across the days of each month.</li>
+          <li>Daily costs (Steph, Jared, Jack and Corey's wages) are logged against the specific day worked — no spreading.</li>
+          <li>Weekly bills — wages, consumables, tyre disposal, other — are logged on the day they're paid and spread evenly across Monday–Saturday of that week.</li>
+          <li>Rent is added month by month above and split evenly across Monday–Saturday of that month.</li>
+          <li>Sunday is still there in case you work it, but it never carries a share of rent or weekly bills — only what you log directly against it.</li>
           <li>Data lives in one shared database — any device or staff member using this web address sees the same figures.</li>
         </ul>
       </Card>

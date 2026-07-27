@@ -34,6 +34,25 @@ export async function GET() {
       );
     `;
 
+    await sql`
+      CREATE TABLE IF NOT EXISTS daily_costs (
+        id TEXT PRIMARY KEY,
+        date TEXT NOT NULL,
+        person TEXT NOT NULL,
+        amount NUMERIC NOT NULL,
+        note TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      );
+    `;
+    await sql`CREATE INDEX IF NOT EXISTS idx_daily_costs_date ON daily_costs(date);`;
+
+    await sql`
+      CREATE TABLE IF NOT EXISTS rent_months (
+        month TEXT PRIMARY KEY,
+        amount NUMERIC NOT NULL
+      );
+    `;
+
     return Response.json({ ok: true, message: 'Database ready. You can close this page and start using the app.' });
   } catch (err) {
     return Response.json({ ok: false, error: String(err) }, { status: 500 });

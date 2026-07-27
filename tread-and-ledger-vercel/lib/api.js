@@ -38,3 +38,23 @@ export async function fetchSettings() {
 export async function saveSettingsApi(settings) {
   return handle(await fetch('/api/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(settings) }));
 }
+
+export async function fetchDailyCosts(start, end) {
+  return handle(await fetch(`/api/daily-costs?start=${start}&end=${end}`));
+}
+export async function createDailyCost(entry) {
+  return handle(await fetch('/api/daily-costs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(entry) }));
+}
+export async function deleteDailyCostApi(id) {
+  return handle(await fetch(`/api/daily-costs?id=${id}`, { method: 'DELETE' }));
+}
+
+export async function fetchRentMonths() {
+  return handle(await fetch('/api/rent'));
+}
+export async function saveRentMonthApi(entry) {
+  return handle(await fetch('/api/rent', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(entry) }));
+}
+export async function deleteRentMonthApi(month) {
+  return handle(await fetch(`/api/rent?month=${month}`, { method: 'DELETE' }));
+}
