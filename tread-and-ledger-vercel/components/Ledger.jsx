@@ -101,7 +101,7 @@ const daysBetween = (startK, endK) => {
   }
   return out;
 };
-const money = (n) => (Math.round((n + Number.EPSILON) * 100) / 100).toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const money = (n) => (Math.round((Number(n) + Number.EPSILON) * 100) / 100).toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 // ---------- small UI atoms ----------
 function Card({ children, style, ...rest }) {
